@@ -1,3 +1,6 @@
+import random
+import string
+
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, ImageFont, ImageDraw
@@ -31,10 +34,23 @@ def generate_multi_char_image(characters, image_size=[100, 600], background_colo
     return background_img
 
 
+def rand_text_generator(length=6, with_capitals=True, with_numerics=True):
+    base = string.ascii_lowercase
+    if with_capitals:
+        base += string.ascii_uppercase
+    if with_numerics:
+        base += string.digits
+    return ''.join(random.choice(base) for x in range(length))
+
+
+def generate_captcha():
+    text = rand_text_generator()
+    image = generate_multi_char_image(text)
+    return np.array(image)
+
+
 def main():
-    image = generate_multi_char_image('ABCDEF')
-    # image = generate_char_image('A')
-    plt.imshow(image)
+    plt.imshow(generate_captcha())
     plt.show()
 
 
