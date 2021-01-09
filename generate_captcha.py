@@ -5,6 +5,14 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, ImageFont, ImageDraw
 
+random.seed(42)
+
+# TODO: random size, rotation, font, spacing, length, position, colors
+# TODO: non-linear transformations
+# TODO: random noise
+# TODO: background patterns
+# TODO: add lines and shapes
+
 
 def create_image_char(image_size, background, character, char_color, char_pos, char_font):
     image = Image.new("RGBA", image_size, background)
@@ -46,7 +54,7 @@ def rand_text_generator(length=6, with_capitals=True, with_numerics=True):
 def generate_captcha():
     text = rand_text_generator()
     image = generate_multi_char_image(text)
-    return np.array(image)
+    return image, text
 
 
 def main():
