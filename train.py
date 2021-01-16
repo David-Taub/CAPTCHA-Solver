@@ -10,11 +10,16 @@ from torch.optim.lr_scheduler import StepLR
 import CaptchaDataset
 
 
-def get_output_shape(layers, input_size):
-    layer_size = input_size
+def get_output_shape(layers, input_size, verbose=False):
+    head_layer = torch.rand(*input_size)
+    if verbose:
+        print(f'Input size: {input_size} [{np.prod(input_size):,}]')
     for layer in layers:
-        layer_size = layer(torch.rand(*layer_size)).shape
-    return np.prod(tuple(layer_size))
+        head_layer = layer(head_layer)
+        if verbose:
+            print(
+                f'Layer {layer.__class__.__name__} size: {tuple(head_layer.shape)} [{np.prod(head_layer.shape):,}]')
+    return np.prod(tuple(head_layer.shape))
 
 
 class Net(nn.Module):
@@ -25,28 +30,49 @@ class Net(nn.Module):
         self.text_length = text_length
         self.alphabet_size = alphabet_size
         self.layers = nn.ModuleList()
+        # self.layers.append(nn.AvgPool2d(2))
+        # self.layers.append(nn.Dropout(0.5))
+
         self.layers.append(nn.Conv2d(3, 32, 3))
         self.layers.append(nn.ReLU())
+        self.layers.append(nn.MaxPool2d(2))
+
         self.layers.append(nn.Conv2d(32, 64, 3))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.MaxPool2d(2))
-        self.layers.append(nn.Dropout(0.25))
+        self.layers.append(nn.Dropout(0.5))
+
         self.layers.append(nn.Conv2d(64, 128, 3))
         self.layers.append(nn.ReLU())
         self.layers.append(nn.MaxPool2d(2))
+
+        # self.layers.append(nn.Conv2d(64, 128, 3))
+        # self.layers.append(nn.ReLU())
+        # self.layers.append(nn.MaxPool2d(2))
+
+        # self.layers.append(nn.Conv2d(64, 128, 3))
+        # self.layers.append(nn.ReLU())
+        # self.layers.append(nn.MaxPool2d(2))
+
+        # self.layers.append(nn.Conv2d(128, 256, 3))
+        # self.layers.append(nn.ReLU())
+        # self.layers.append(nn.MaxPool2d(2))
+
         self.layers.append(nn.Flatten())
         self.layers.append(nn.Dropout(0.5))
-        self.layers.append(nn.Linear(get_output_shape(self.layers, expected_input_size), 128))
+        self.layers.append(nn.Linear(get_output_shape(self.layers, expected_input_size), 512))
+        # self.layers.append(nn.Linear(get_output_shape(self.layers, expected_input_size), 1024))
         # self.layers.append(nn.MaxPool1d(2))
         self.layers.append(nn.Linear(get_output_shape(self.layers, expected_input_size),
                                      self.text_length * self.alphabet_size))
+        self.layers.append(nn.Unflatten(1, (self.alphabet_size, self.text_length)))
+        self.layers.append(nn.LogSoftmax(1))
+        get_output_shape(self.layers, expected_input_size, True)
 
     def forward(self, x):
         for layer in self.layers:
             x = layer(x)
-        x = x.view((-1, self.alphabet_size, self.text_length))
-        output = F.log_softmax(x, dim=1)
-        return output
+        return x
 
 
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -59,9 +85,8 @@ def train(args, model, device, train_loader, optimizer, epoch):
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+            print(f'Train Epoch: {epoch:3d} [{batch_idx * len(data):5d}/{len(train_loader.dataset)} '
+                  f'({100. * batch_idx / len(train_loader):3.0f}%)]\tLoss: {loss.item():.6f}')
             if args.dry_run:
                 break
 
@@ -76,24 +101,22 @@ def test(model, device, test_loader):
             output = model(data)
             test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).sum().item()
-
+            correct += pred.eq(target.view_as(pred)).to(dtype=torch.float).mean(2).sum().item()
     test_loss /= len(test_loader.dataset)
 
-    print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
-        test_loss, correct, len(test_loader.dataset),
-        100. * correct / len(test_loader.dataset)))
+    print(f'\nTest set: Average loss: {test_loss:.4f}, '
+          f'Accuracy: {correct:.1f}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset):.1f}%)')
 
 
 def main():
     # Training settings
     parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--batch-size', type=int, default=16, metavar='N',
-                        help='input batch size for training (default: 64)')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=32, metavar='N',
+                        help='input batch size for training (default: 32)')
+    parser.add_argument('--test-batch-size', type=int, default=32, metavar='N',
                         help='input batch size for testing (default: 1000)')
-    parser.add_argument('--epochs', type=int, default=14, metavar='N',
-                        help='number of epochs to train (default: 14)')
+    parser.add_argument('--epochs', type=int, default=20, metavar='N',
+                        help='number of epochs to train (default: 20)')
     parser.add_argument('--lr', type=float, default=1.0, metavar='LR',
                         help='learning rate (default: 1.0)')
     parser.add_argument('--gamma', type=float, default=0.7, metavar='M',
@@ -132,7 +155,9 @@ def main():
     dataset1
     model = Net(image_width=dataset1.image_width, image_height=dataset1.image_height,
                 text_length=dataset1.text_length, alphabet_size=len(dataset1.alphabet_dict)).to(device)
+    print(sum([len(p) for p in model.parameters()]))
     optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
+    # optimizer = optim.Adam(model.parameters(), lr=args.lr)
 
     scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     for epoch in range(1, args.epochs + 1):

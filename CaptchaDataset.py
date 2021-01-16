@@ -27,7 +27,7 @@ class CaptchaDataset(Dataset):
         sample_id = self.sample_ids[idx]
         img_path = os.path.join(self.dir_path, f'{sample_id}.jpg')
         img = np.array(Image.open(img_path))
-        img = np.transpose(img, (2, 0, 1)) / 255.0
+        img = ((np.transpose(img, (2, 0, 1)) / 255.0) - 0.5) * 2.0
         if self.transform:
             img = self.transform(img)
         string = self.strings[idx]
