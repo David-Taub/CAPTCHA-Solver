@@ -16,8 +16,7 @@ def create_dataset(dir_path, size, generator):
     with open(os.path.join(dir_path, 'metadata.json'), 'w', encoding='utf-8') as f:
         json.dump({'alphabet': generator.alphabet,
                    'image_width': generator.image_size[1],
-                   'image_height': generator.image_size[0],
-                   'text_length': generator.length}, f)
+                   'image_height': generator.image_size[0]}, f)
     with open(os.path.join(dir_path, 'strings.csv'), 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter=',')
         for i in tqdm.tqdm(range(size), desc=dir_path):
@@ -30,7 +29,7 @@ def create_dataset(dir_path, size, generator):
 def main():
     for i, generator in enumerate(generate_captcha.generators):
         create_dataset(rf'data\level_{i}\train', int(sys.argv[1]), generator)
-        create_dataset(rf'data\\level_{i}\test', 100, generator)
+        create_dataset(rf'data\\level_{i}\test', int(sys.argv[1]) // 10, generator)
 
 
 if __name__ == '__main__':
