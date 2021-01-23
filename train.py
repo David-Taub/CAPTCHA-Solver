@@ -2,6 +2,9 @@ import string
 import os
 import argparse
 
+import pytorch_lightning as pl
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
+
 import mlflow.pytorch
 from mlflow.tracking import MlflowClient
 
@@ -72,12 +75,16 @@ VGG64
 """
 
 
-class Net(nn.Module):
+class Net(pl.LightningModule):
     def __init__(self, input_size, text_length, alphabet_size):
         super(Net, self).__init__()
         expected_input_size = [1, 3] + list(input_size)
+        self.input_size = input_size
         self.text_length = text_length
         self.alphabet_size = alphabet_size
+        self.train_acc = pl.metrics.Accuracy()
+        self.valid_acc = pl.metrics.Accuracy()
+
         self.layers = nn.ModuleList()
         # self.layers.append(nn.AvgPool2d(2))
         # self.layers.append(nn.Dropout(0.25))
@@ -126,44 +133,80 @@ class Net(nn.Module):
             x = layer(x)
         return x
 
-
-def train(args, model, device, train_loader, optimizer, epoch, title=''):
-    model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device, dtype=torch.float), target.to(device, dtype=torch.long)
-        optimizer.zero_grad()
-        output = model(data)
+    def training_step(self, batch, batch_idx):
+        data, target = batch
+        data = data.float()
+        target = target.long()
+        # data,  = data.to(device, dtype=torch.float)
+        # target = target.to(device, dtype=torch.long)
+        output = self(data)
         loss = F.nll_loss(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            print(f'{title} Train Epoch: {epoch:3d} [{batch_idx * len(data):5d}/{len(train_loader.dataset)} '
-                  f'({100. * batch_idx / len(train_loader):3.0f}%)]\tLoss: {loss.item():.6f}')
-            if args.dry_run:
-                break
+        self.train_acc(output, target)
+        self.log('train_acc', self.train_acc, on_step=True, on_epoch=False, prog_bar=True)
+        # self.log('loss', loss, on_step=True, on_epoch=False, prog_bar=True)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        data, target = batch
+        data = data.float()
+        target = target.long()
+        output = self(data)
+        val_loss = F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+
+        # result = pl.EvalResult()
+        # pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+        # accuracy = pred.eq(target.view_as(pred)).to(dtype=torch.float).mean(2).sum().item()
+        # result.log('val_loss', val_loss)
+        # result.log('accuracy', accuracy)
+        self.valid_acc(output, target)
+        self.log('valid_acc', self.valid_acc, on_step=False, on_epoch=True, prog_bar=True)
+        return val_loss
+
+    # def training_epoch_end(self, outs):
+    #     # log epoch metric
+    #     self.log('train_acc_epoch', self.train_acc.compute())
+
+    # def validation_epoch_end(self, outs):
+    #     self.log('train_acc_epoch', self.valid_acc.compute())
+
+    def configure_optimizers(self):
+        return optim.Adam(self.parameters(), lr=1e-3)
 
 
-def test(model, device, test_loader, title=''):
-    model.eval()
-    test_loss = 0
-    correct = 0
-    with torch.no_grad():
-        for data, target in test_loader:
-            data, target = data.to(device, dtype=torch.float), target.to(device, dtype=torch.long)
-            output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
-            pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
-            correct += pred.eq(target.view_as(pred)).to(dtype=torch.float).mean(2).sum().item()
-    # show(data, output, test_loader)
-    test_loss /= len(test_loader.dataset)
-    print(f'{title} Test set: Average loss: {test_loss:.4f}, '
-          f'Accuracy: {correct:.1f}/{len(test_loader.dataset)} ({100. * correct / len(test_loader.dataset):.1f}%)')
-    return test_loss
+# def train(args, model, device, train_loader, optimizer, epoch, title=''):
+#     model.train()
+#     optimizer.zero_grad()
+#     for batch_idx, (data, target) in enumerate(train_loader):
+#         loss.backward()
+#         optimizer.step()
+#         if batch_idx % args.log_interval == 0:
+#             print(f'{title} Train Epoch: {epoch:3d} [{batch_idx * len(data):5d}/{len(train_loader.dataset)} '
+#                   f'({100. * batch_idx / len(train_loader):3.0f}%)]\tLoss: {loss.item():.6f}')
+#             if args.dry_run:
+#                 break
 
 
-def show(data, output, test_loader):
+# def test(model, device, val_loader, title=''):
+#     model.eval()
+#     test_loss = 0
+#     correct = 0
+#     with torch.no_grad():
+#         for data, target in val_loader:
+#             data, target = data.to(device, dtype=torch.float), target.to(device, dtype=torch.long)
+#             output = model(data)
+#             test_loss += F.nll_loss(output, target, reduction='sum').item()  # sum up batch loss
+#             pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+#             correct += pred.eq(target.view_as(pred)).to(dtype=torch.float).mean(2).sum().item()
+#     # show(data, output, val_loader)
+#     test_loss /= len(val_loader.dataset)
+#     print(f'{title} Test set: Average loss: {test_loss:.4f}, '
+#           f'Accuracy: {correct:.1f}/{len(val_loader.dataset)} ({100. * correct / len(val_loader.dataset):.1f}%)')
+#     return test_loss
+
+
+def show(data, output, val_loader):
     import matplotlib.pyplot as plt
-    inv_dict = {v: k for k, v in test_loader.dataset.alphabet_dict.items()}
+    inv_dict = {v: k for k, v in val_loader.dataset.alphabet_dict.items()}
     txt = ''.join([inv_dict[i] for i in np.argmax(np.array(output[0].cpu()), 0)])
     plt.imshow(np.array(data.cpu())[0].T)
     plt.title(txt)
@@ -215,14 +258,15 @@ def main():
     device = torch.device("cuda" if use_cuda else "cpu")
 
     train_kwargs = {'batch_size': args.batch_size}
-    test_kwargs = {'batch_size': args.test_batch_size}
+    val_kwargs = {'batch_size': args.test_batch_size,
+                  'shuffle': False}
     if use_cuda:
         print('using CUDA')
         cuda_kwargs = {'num_workers': 1,
                        'pin_memory': True,
                        'shuffle': True}
         train_kwargs.update(cuda_kwargs)
-        test_kwargs.update(cuda_kwargs)
+        val_kwargs.update(cuda_kwargs)
 
     #######################
     # Train
@@ -236,42 +280,50 @@ def main():
             # transforms.Normalize((0, 0, 0), (1, 1, 1)),
         ])
     PADDED_TEXT_INPUT_SIZE = 10
-    TRAIN_EPOCH = 5000
-    TEST_EPOCH = 500
+    TRAIN_EPOCH = 4096
+    TEST_EPOCH = 512
     output_alphabet_size = len(string.ascii_lowercase + string.ascii_uppercase + string.digits) + 1
     model = Net(input_size=NET_INPUT_SIZE, text_length=PADDED_TEXT_INPUT_SIZE,
                 alphabet_size=output_alphabet_size).to(device)
     # optimizer = optim.Adadelta(model.parameters(), lr=args.lr)
-    optimizer = optim.Adam(model.parameters())
-    scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
+    early_stop_callback = EarlyStopping(
+        monitor='valid_acc',
+        min_delta=0.00,
+        patience=1,
+        verbose=True,
+        mode='max'
+    )
+    trainer = pl.Trainer(gpus=1, callbacks=[early_stop_callback])
+    # scheduler = StepLR(optimizer, step_size=1, gamma=args.gamma)
     print(f'Trainable parameters: {sum([len(p) for p in model.parameters()])}')
     # for lvl_dir in os.listdir('data')[-2:]:
     for i, generator in enumerate(generate_captcha.generators):
-        if i != 3:
-            continue
+        # if i != 3:
+            # continue
         # train_dataset = captcha_datasets.CaptchaDataset(rf'data\\{lvl_dir}\train', transform=transform,
         #                                                 padded_text_length=PADDED_TEXT_INPUT_SIZE)
-        # test_dataset = captcha_datasets.CaptchaDataset(rf'data\\{lvl_dir}\test', transform=transform,
+        # val_dataset = captcha_datasets.CaptchaDataset(rf'data\\{lvl_dir}\test', transform=transform,
         #                                                padded_text_length=PADDED_TEXT_INPUT_SIZE)
         train_dataset = captcha_datasets.DynamicCaptchaDataset(generator, transform=transform,
                                                                padded_text_length=PADDED_TEXT_INPUT_SIZE,
                                                                fake_length=TRAIN_EPOCH)
-        test_dataset = captcha_datasets.DynamicCaptchaDataset(generator, transform=transform,
-                                                              padded_text_length=PADDED_TEXT_INPUT_SIZE,
-                                                              fake_length=TEST_EPOCH)
+        val_dataset = captcha_datasets.DynamicCaptchaDataset(generator, transform=transform,
+                                                             padded_text_length=PADDED_TEXT_INPUT_SIZE,
+                                                             fake_length=TEST_EPOCH)
         train_loader = torch.utils.data.DataLoader(train_dataset, **train_kwargs)
-        test_loader = torch.utils.data.DataLoader(test_dataset, **test_kwargs)
+        val_loader = torch.utils.data.DataLoader(val_dataset, **val_kwargs)
+        trainer.fit(model, train_loader, val_loader)
 
-        test_loss = np.inf
-        for epoch in range(1, args.epochs + 1):
-            train(args, model, device, train_loader, optimizer, epoch, title=f'level_{i}')
-            new_test_loss = test(model, device, test_loader, title=f'level_{i}')
-            # train(args, model, device, train_loader, optimizer, epoch, title=lvl_dir)
-            # new_test_loss = test(model, device, test_loader, title=lvl_dir)
-            if new_test_loss > test_loss and epoch > 15:
-                break
-            test_loss = new_test_loss
-            scheduler.step()
+        # test_loss = np.inf
+        # for epoch in range(1, args.epochs + 1):
+        #     train(args, model, device, train_loader, optimizer, epoch, title=f'level_{i}')
+        #     new_test_loss = test(model, device, val_loader, title=f'level_{i}')
+        #     # train(args, model, device, train_loader, optimizer, epoch, title=lvl_dir)
+        #     # new_test_loss = test(model, device, val_loader, title=lvl_dir)
+        #     if new_test_loss > test_loss and epoch > 15:
+        #         break
+        #     test_loss = new_test_loss
+        #     scheduler.step()
 
         if args.save_model:
             torch.save(model.state_dict(), "{lvl_dir}mnist_cnn.pt")
