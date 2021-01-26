@@ -162,12 +162,12 @@ class Net(pl.LightningModule):
         return optim.Adam(self.parameters(), lr=1e-4)
 
 
-def show(data, output, val_loader):
+def show(captcha_input, text_output, dataset):
     import matplotlib.pyplot as plt
-    inv_dict = {v: k for k, v in val_loader.dataset.alphabet_dict.items()}
-    txt = ''.join([inv_dict[i] for i in np.argmax(np.array(output[0].cpu()), 0)])
-    plt.imshow(np.array(data.cpu())[0].T)
-    plt.title(txt)
+    inv_dict = {v: k for k, v in dataset.alphabet_dict.items()}
+    text_output_str = ''.join([inv_dict[i] for i in np.argmax(np.array(text_output[0].cpu()), 0)])
+    plt.imshow(np.array(captcha_input.cpu())[0].T)
+    plt.title(text_output_str)
     plt.show()
 
 
@@ -241,7 +241,7 @@ def main():
             monitor='v_loss',
             min_delta=0.00,
             patience=4,
-            mode='max'
+            mode='min'
         )
         trainer = pl.Trainer(gpus=1, callbacks=[early_stop_callback], min_epochs=6)
         print(f'\nLevel {i}:')
