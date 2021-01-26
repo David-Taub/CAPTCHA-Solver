@@ -8,18 +8,23 @@ import generate_captcha
 
 
 class DynamicCaptchaDataset(Dataset):
+
     def __init__(self, generator: generate_captcha.CaptchGenerator,
-                 transform=None, padded_text_length=10, fake_length=1000):
+                 transform=None, padded_text_length=10, fake_length=1000, shuffle=True):
         self.generator = generator
+        self.shuffle = shuffle
         self.transform = transform
         self.padded_text_length = padded_text_length
-        self.alphabet_dict = dict([(v, i) for i, v in enumerate([''] + list(self.generator.alphabet))])
+        self.alphabet_dict = dict(
+            [(v, i) for i, v in enumerate([''] + list(self.generator.alphabet))])
         self.fake_length = fake_length
 
     def __len__(self):
         return self.fake_length
 
     def __getitem__(self, idx):
+        if idx == 0 and not self.shuffle:
+            self.generator.reset_seed()
         img, string = self.generator.generate_captcha()
         if self.transform:
             img = self.transform(img)
@@ -31,13 +36,15 @@ class DynamicCaptchaDataset(Dataset):
 
 
 class CaptchaDataset(Dataset):
+
     def __init__(self, dir_path, transform=None, padded_text_length=10):
         self.dir_path = dir_path
         self.transform = transform
         self.padded_text_length = padded_text_length
         with open(os.path.join(dir_path, 'metadata.json'), 'r', encoding='utf-8') as f:
             self.metadata = json.load(f)
-        self.alphabet_dict = dict([(v, i) for i, v in enumerate([''] + list(self.metadata['alphabet']))])
+        self.alphabet_dict = dict(
+            [(v, i) for i, v in enumerate([''] + list(self.metadata['alphabet']))])
         with open(os.path.join(dir_path, 'strings.csv'), 'r', newline='', encoding='utf-8') as f:
             reader = csv.reader(f)
             self.sample_ids, self.strings = zip(*reader)

@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image, ImageFont, ImageDraw
 
-random.seed(42)
 
 # TODO: random size, rotation, font, spacing, length, position, colors
 # TODO: non-linear transformations
@@ -15,6 +14,10 @@ random.seed(42)
 
 
 class CaptchGenerator:
+    def reset_seed(self, seed=42):
+        random.seed(seed)
+        np.random.seed(seed)
+
     def __init__(self,
                  alphabet=string.ascii_lowercase, image_size=(100, 600), length=6, offset_range=(0, 1),
                  start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
@@ -30,6 +33,7 @@ class CaptchGenerator:
         self.font_path = font_path
         self.font_size = font_size
         self.start_margins = start_margins
+        self.reset_seed()
 
     def _generate_char_image(self, character):
         font_obj = ImageFont.truetype(self.font_path, self.font_size)
