@@ -20,6 +20,7 @@ class CaptchGenerator:
 
     def __init__(self,
                  alphabet=string.ascii_lowercase, image_size=(100, 600), length=6, offset_range=((0, 1), (0, 1)),
+                 rotation_range=(-60, 60),
                  start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
                  char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size=100, start_margins=(0, 0)):
         self.alphabet = alphabet
@@ -27,6 +28,7 @@ class CaptchGenerator:
         self.length = length
         self.offset_range = offset_range
         self.start_offset = start_offset
+        self.rotation_range = rotation_range
         self.char_image_size = char_image_size
         self.background_color = background_color
         self.char_color = char_color
@@ -49,13 +51,19 @@ class CaptchGenerator:
         background_img = Image.fromarray(blank_background.astype(np.uint8))
         x_location = self.start_offset
         for img in imgs:
-            x_offset = random.randrange(*self.offset_range[0])
-            y_offset = random.randrange(*self.offset_range[1])
+            rotation_angle = random.randrange(*self.rotation_range)
+            img_width = img.size[0]
+            img = img.rotate(rotation_angle, expand=True)
+            base_y_offset = (background_img.size[1] - img.size[1]) * 0.5
+            x_offset = random.randrange(*self.offset_range[0]) + img_width
+            y_offset = int(base_y_offset + random.randrange(*self.offset_range[1]))
+            # import pdb
+            # pdb.set_trace()
             if y_offset < 0:
                 img = img.crop((0, -y_offset, img.size[0], img.size[1]))
                 y_offset = 0
             background_img.alpha_composite(img, (x_location, y_offset))
-            x_location += img.size[0] + x_offset
+            x_location += x_offset
         return background_img.convert('RGB')
 
     def get_alphabet(self, with_capitals=True, with_numerics=True):
@@ -79,18 +87,22 @@ class CaptchGenerator:
 # TODO: move to dataset creator
 generators = [
     CaptchGenerator(alphabet=string.ascii_lowercase, image_size=(100, 600), length=6, offset_range=((0, 1), (0, 1)),
+                    rotation_range=(0, 1),
                     start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size=100, start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase + string.digits,
-                    image_size=(100, 600), length=6, offset_range=((0, 1), (0, 1)),
+                    image_size=(100, 600), length=6, offset_range=((-5, 5), (-5, 5)),
+                    rotation_range=(-5, 5),
                     start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size=100, start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase + string.digits,
-                    image_size=(100, 600), length=6, offset_range=((-40, 0), (-20, 20)),
+                    image_size=(100, 600), length=6, offset_range=((-45, -10), (-15, 15)),
+                    rotation_range=(-30, 30),
                     start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size=100, start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase + string.digits,
-                    image_size=(100, 600), length=6, offset_range=((-60, -30), (-30, 30)),
+                    image_size=(100, 600), length=6, offset_range=((-60, -30), (-25, 25)),
+                    rotation_range=(-60, 60),
                     start_offset=20, char_image_size=(100, 100), background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size=100, start_margins=(0, 0)),
 ]
@@ -98,9 +110,9 @@ generators = [
 
 def main():
     N = 4
-    for i in range(N):
-        plt.subplot(N, 1, i + 1)
-        plt.imshow(generators[-1].generate_captcha()[0])
+    for i in range(2 * N):
+        plt.subplot(N, 2, i + 1)
+        plt.imshow(generators[-2].generate_captcha()[0])
     plt.show()
 
 
