@@ -20,7 +20,7 @@ class CaptchGenerator:
 
     def __init__(self,
                  alphabet=string.ascii_lowercase, image_size=(100, 600), length_range=(6, 7),
-                 offset_range=((0, 1), (0, 1)), rotation_range=(-60, 60),
+                 offset_range=((0, 1), (0, 1)), rotation_range=(-60, 60), noise_sigma_range=(0, 100),
                  start_offset=20, background_color=(255, 255, 255, 255),
                  char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size_range=(100, 101),
                  start_margins=(0, 0)):
@@ -30,6 +30,7 @@ class CaptchGenerator:
         self.offset_range = offset_range
         self.start_offset = start_offset
         self.rotation_range = rotation_range
+        self.noise_sigma_range = noise_sigma_range
         self.background_color = background_color
         self.char_color = char_color
         self.font_path = font_path
@@ -48,26 +49,33 @@ class CaptchGenerator:
         # H x W x C
         return image
 
+    def _add_noise(self, img, sigma=100):
+        img_arr = np.array(img)
+        noise = np.random.normal(0, sigma, img_arr.shape)
+        noised_arr = np.minimum(np.maximum(img_arr + noise, 0), 255)
+        return Image.fromarray(noised_arr.astype(np.uint8))
+
     def _generate_multi_char_image(self, characters):
         imgs = [self._generate_char_image(character=c) for c in characters]
-        blank_background = np.tile([[self.background_color]], (list(self.image_size) + [1]))
-        background_img = Image.fromarray(blank_background.astype(np.uint8))
+        background_array = np.tile([[self.background_color]], (list(self.image_size) + [1]))
+        captcha_image = Image.fromarray(background_array.astype(np.uint8))
+
         x_location = self.start_offset
         for img in imgs:
             rotation_angle = random.randrange(*self.rotation_range)
             img_width = img.size[0]
             img = img.rotate(rotation_angle, resample=Image.BICUBIC, expand=True)
-            base_y_offset = (background_img.size[1] - img.size[1]) / 2
+            base_y_offset = (captcha_image.size[1] - img.size[1]) / 2
             x_offset = random.randrange(*self.offset_range[0]) + img_width
             y_offset = int(base_y_offset + random.randrange(*self.offset_range[1]))
-            # import pdb
-            # pdb.set_trace()
             if y_offset < 0:
                 img = img.crop((0, -y_offset, img.size[0], img.size[1]))
                 y_offset = 0
-            background_img.alpha_composite(img, (x_location, y_offset))
+            captcha_image.alpha_composite(img, (x_location, y_offset))
             x_location += x_offset
-        return background_img.convert('RGB')
+        sigma = random.randrange(*self.noise_sigma_range)
+        captcha_image = self._add_noise(captcha_image, sigma)
+        return captcha_image.convert('RGB')
 
     def get_alphabet(self, with_capitals=True, with_numerics=True):
         alphabet = string.ascii_lowercase
@@ -90,25 +98,26 @@ class CaptchGenerator:
 # TODO: move to dataset creator
 generators = [
     CaptchGenerator(alphabet=string.ascii_lowercase,
-                    image_size=(100, 600), length_range=(6, 7), offset_range=((10, 11), (0, 1)), rotation_range=(0, 1),
+                    image_size=(100, 600), length_range=(6, 7), offset_range=((10, 11), (0, 1)),
+                    rotation_range=(0, 1), noise_sigma_range=(0, 1),
                     start_offset=20, background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size_range=(90, 91),
                     start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase,
                     image_size=(100, 600), length_range=(6, 8), offset_range=((7, 13), (-5, 5)),
-                    rotation_range=(-5, 5),
+                    rotation_range=(-5, 5), noise_sigma_range=(0, 10),
                     start_offset=20, background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size_range=(90, 91),
                     start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase + string.digits,
                     image_size=(100, 600), length_range=(5, 10), offset_range=((-5, 10), (-15, 15)),
-                    rotation_range=(-30, 30),
+                    rotation_range=(-30, 30), noise_sigma_range=(5, 40),
                     start_offset=20, background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size_range=(90, 91),
                     start_margins=(0, 0)),
     CaptchGenerator(alphabet=string.ascii_lowercase + string.ascii_uppercase + string.digits,
                     image_size=(100, 600), length_range=(5, 11), offset_range=((-15, 0), (-20, 20)),
-                    rotation_range=(-60, 60),
+                    rotation_range=(-60, 60), noise_sigma_range=(30, 130),
                     start_offset=20, background_color=(255, 255, 255, 255),
                     char_color=(0, 0, 0, 255), font_path=r'.\fonts\FreeMono.ttf', font_size_range=(70, 131),
                     start_margins=(0, 0)),
